@@ -14,10 +14,16 @@ def get_schedule_links(page):
     for link in links:
         href = link.get_attribute("href")
         text = link.inner_text().strip()
+
         if href and "/schedule/" in href.lower():
+            # FIX: convert relative → absolute
+            if href.startswith("/"):
+                href = "https://www.haysa.org" + href
+
             schedule_links.append({"url": href, "division": text})
 
     return schedule_links
+
 
 def extract_schedule_table(page):
     page.wait_for_selector(
