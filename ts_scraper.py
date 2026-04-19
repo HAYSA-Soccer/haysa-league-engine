@@ -1,77 +1,43 @@
-import time
 import pandas as pd
 from io import StringIO
-from datetime import datetime
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-
+from playwright.sync_api import sync_playwright
 from sheets_writer import write_df
 from config.settings import TS_SCHEDULE_RANGE
 
 BASE_URL = "https://www.haysa.org/schedules"
 
-# -------------------------
-# Driver
-# -------------------------
-def setup_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--start-maximized")
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-
-    driver = webdriver.Chrome(options=chrome_options)
-    return driver
-
-
-# -------------------------
-# Scraping helpers
-# -------------------------
-def get_schedule_links(driver):
-    driver.get(BASE_URL)
-
-    WebDriverWait(driver, 15).until(
-        EC.presence_of_all_elements_located((By.XPATH, '//*[@id="SchedulesPageLayout"]//a'))
-    )
-
-    links = driver.find_elements(By.XPATH, '//*[@id="SchedulesPageLayout"]//a')
+def get_schedule_links(page):
+    page.goto(BASE_URL, wait_until="networkidle")
+    links = page.query_selector_all('#SchedulesPageLayout a')
 
     schedule_links = []
     for link in links:
         href = link.get_attribute("href")
-        text = link.text.strip()
+        text = link.inner_text().strip()
         if href and "/schedule/" in href.lower():
             schedule_links.append({"url": href, "division": text})
 
     return schedule_links
 
-def extract_schedule_table(driver):
-    WebDriverWait(driver, 20).until(
-        EC.presence_of_element_located(
-            (By.XPATH, "//*[@id='ctl00_ContentPlaceHolder1_StandingsResultsControl_ScheduleGrid_ctl00']")
-        )
+def extract_schedule_table(page):
+    page.wait_for_selector(
+        "#ctl00_ContentPlaceHolder1_StandingsResultsControl_ScheduleGrid_ctl00",
+        timeout=30000
     )
-    table_element = driver.find_element(
-        By.XPATH, "//*[@id='ctl00_ContentPlaceHolder1_StandingsResultsControl_ScheduleGrid_ctl00']"
+
+    html = page.inner_html(
+        "#ctl00_ContentPlaceHolder1_StandingsResultsControl_ScheduleGrid_ctl00"
     )
-    table_html = driver.execute_script("return arguments[0].outerHTML;", table_element)
-    df = pd.read_html(StringIO(table_html))[0]
+
+    df = pd.read_html(StringIO(html))[0]
     df.columns = ["Date", "Time", "Home", "Away", "Location"]
     return df
 
 def clean_schedule_df(df, division):
-    # Remove header rows like "Date" or "Time"
     valid_days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     df = df[df["Date"].astype(str).str[:3].isin(valid_days)]
 
-    # Extract scores from Home/Away
+    import re
     def extract_number(text):
         text = str(text).strip()
         match = re.search(r"(\d+)$", text)
@@ -86,41 +52,29 @@ def clean_schedule_df(df, division):
     df["Away"] = df["Away"].apply(lambda x: extract_number(x)[0])
 
     df["Division"] = division
-
     return df
 
-def extract_schedule_data(url, driver, division):
-    driver.get(url)
-    time.sleep(2)
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(2)
-
-    df = extract_schedule_table(driver)
-    df = clean_schedule_df(df, division)
-    return df
-
-# -------------------------
-# MAIN
-# -------------------------
 def main():
-    driver = setup_driver()
-    links = get_schedule_links(driver)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1920, "height": 1080})
 
-    all_frames = []
-    for link in links:
-        df = extract_schedule_data(link["url"], driver, link["division"])
-        if df is not None and not df.empty:
+        links = get_schedule_links(page)
+
+        all_frames = []
+        for link in links:
+            page.goto(link["url"], wait_until="networkidle")
+            df = extract_schedule_table(page)
+            df = clean_schedule_df(df, link["division"])
             all_frames.append(df)
 
-    driver.quit()
+        browser.close()
 
     if not all_frames:
         print("No TS data found.")
         return
 
     ts_df = pd.concat(all_frames, ignore_index=True)
-
-    # Write to Google Sheets
     write_df(ts_df, TS_SCHEDULE_RANGE)
 
 if __name__ == "__main__":
