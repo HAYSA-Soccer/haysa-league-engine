@@ -60,7 +60,7 @@ def clean_schedule_df(df, division):
 
 def main():
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=False)
         page = browser.new_page(viewport={"width": 1920, "height": 1080})
 
         links = get_schedule_links(page)
