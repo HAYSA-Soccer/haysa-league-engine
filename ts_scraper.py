@@ -26,18 +26,16 @@ def get_schedule_links(page):
 
 
 def extract_schedule_table(page):
-    page.wait_for_selector(
-        "#ctl00_ContentPlaceHolder1_StandingsResultsControl_ScheduleGrid_ctl00",
-        timeout=30000
-    )
+    # Wait for ANY Telerik schedule grid
+    page.wait_for_selector("table[id*='ScheduleGrid']", timeout=60000)
 
-    html = page.inner_html(
-        "#ctl00_ContentPlaceHolder1_StandingsResultsControl_ScheduleGrid_ctl00"
-    )
+    # Grab the first matching table
+    html = page.inner_html("table[id*='ScheduleGrid']")
 
     df = pd.read_html(StringIO(html))[0]
     df.columns = ["Date", "Time", "Home", "Away", "Location"]
     return df
+
 
 def clean_schedule_df(df, division):
     valid_days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
