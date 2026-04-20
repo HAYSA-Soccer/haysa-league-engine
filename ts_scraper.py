@@ -67,7 +67,19 @@ def main():
 
         all_frames = []
         for link in links:
-            page.goto(link["url"], wait_until="networkidle")
+            page.goto(link["url"], wait_until="domcontentloaded")
+
+            print("Loaded:", link["url"])
+            print("Page title:", page.title())
+            print("HTML length:", len(page.content()))
+
+            # Force JS hydration
+            page.wait_for_timeout(2000)
+            
+            # Scroll to bottom to trigger lazy loading
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(2000)
+
             df = extract_schedule_table(page)
             df = clean_schedule_df(df, link["division"])
             all_frames.append(df)
