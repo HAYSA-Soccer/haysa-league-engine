@@ -2,7 +2,8 @@ name: SSSL Scraper
 
 on:
   schedule:
-    - cron: "15 6 * * *"
+    - #cron: "15 6 * * *"
+
   workflow_dispatch:
 
 jobs:
