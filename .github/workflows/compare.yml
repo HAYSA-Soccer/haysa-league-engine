@@ -2,7 +2,9 @@ name: Compare TS vs SSSL
 
 on:
   schedule:
-    - cron: "30 6 * * *"
+    - #cron: "30 6 * * *"
+
+
   workflow_dispatch:
 
 jobs:
